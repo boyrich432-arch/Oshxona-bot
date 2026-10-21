@@ -1,4 +1,4 @@
-import os, threading, logging, asyncio, math
+ import os, threading, logging, asyncio, math
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import httpx
@@ -12,6 +12,7 @@ SB = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1/"
 KEY = os.environ["SUPABASE_SECRET_KEY"]
 ADMIN = os.environ.get("ADMIN_CHAT_ID")  # ixtiyoriy: yangi buyurtma xabari keladigan chat
 H = {"apikey": KEY, "Content-Type": "application/json"}
+SCOOTER_KMH = 30  # skuter oʻrtacha tezligi
 K_LAT, K_LNG = os.environ.get("KITCHEN_LAT"), os.environ.get("KITCHEN_LNG")  # oshxona koordinatasi (vaqt hisoblash uchun)
 
 MAIN = ReplyKeyboardMarkup([["🍽 Buyurtma berish", "🛒 Savat"], ["📅 Joy bron qilish", "⭐ Sharh qoldirish"]], resize_keyboard=True)
@@ -200,7 +201,7 @@ def haversine_min(a_lat, a_lng, b_lat, b_lng):
     r = math.pi / 180
     h = math.sin((b_lat - a_lat) * r / 2) ** 2 + math.cos(a_lat * r) * math.cos(b_lat * r) * math.sin((b_lng - a_lng) * r / 2) ** 2
     km = 2 * 6371 * math.asin(math.sqrt(h))
-    return max(1, round(km / 25 * 60))  # ~25 km/soat
+    return max(3, round(km * 1.3 / SCOOTER_KMH * 60))  # toʻgʻri masofa x1.3 = yoʻl
 
 
 async def eta_min(o):
@@ -222,7 +223,8 @@ async def eta_min(o):
             try:
                 r = await c.get(f"https://router.project-osrm.org/route/v1/driving/{K_LNG},{K_LAT};{lng},{lat}",
                                 params={"overview": "false"})
-                return max(1, round(r.json()["routes"][0]["duration"] / 60))
+                km = r.json()["routes"][0]["distance"] / 1000  # xarita boʻyicha yoʻl masofasi
+                return max(3, round(km / SCOOTER_KMH * 60))
             except Exception:
                 return haversine_min(float(K_LAT), float(K_LNG), float(lat), float(lng))
     except Exception:
@@ -244,7 +246,8 @@ async def watcher(app):
                     txt = f"👨‍🍳 Buyurtmangiz #{o['id']} tayyorlanmoqda."
                 elif st == 2:
                     e = await eta_min(o)
-                    txt = f"🍽 Buyurtmangiz #{o['id']} tayyor va yoʻlga chiqdi! 🛵" + (f"\nTaxminan {e} daqiqada yetib boradi." if e else "")
+                    mins = e or 30
+                    txt = f"🍽 Buyurtmangiz #{o['id']} tayyor va yoʻlga chiqdi! 🛵\n{mins} daqiqa ichida yetkazib beriladi."
                 else:
                     txt = f"✅ Buyurtma #{o['id']} yetkazildi. Kuryerga pulni bergan boʻlsangiz, tugmani bosing:"
                     kb = IM([[IB("✅ Pul berildi", callback_data=f"paid:{o['id']}")]])
